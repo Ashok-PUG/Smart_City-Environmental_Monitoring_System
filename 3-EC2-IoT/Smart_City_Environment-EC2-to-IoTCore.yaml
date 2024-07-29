@@ -1,0 +1,274 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Smart City Environmental Monitoring System - Unit 3 Assignment
+
+# Create a Parameter to Prompt while creating the CloudFormation Stack to select the pre-created Key-Pair for EC2 access.
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+  # Create a VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: IoTVPC
+  
+  # Create a Subnet
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: IoTSubnet
+
+  # Create an Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: IoTInternetGateway
+
+  # Attach the Internet Gateway to the VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Create a Route Table
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: IoTRouteTable
+
+  # Create a Route in the Route Table
+  Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Associate the Subnet with the Route Table
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet
+      RouteTableId: !Ref RouteTable
+
+  # Create a Security Group to Allow 22 (SSH) and 8883 (IoT Topic)
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and MQTT access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8883
+          ToPort: 8883
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: IoTDeviceSecurityGroup
+
+  # Create an IoT Policy
+  IoTPolicy:
+    Type: AWS::IoT::Policy
+    DeletionPolicy: "Delete"
+    Properties:
+      PolicyName: IoTPolicy
+      PolicyDocument: |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": "iot:*",
+              "Resource": "*"
+            }
+          ]
+        }
+      Tags:
+        - Key: Name
+          Value: IoTPolicy
+
+  # Create an IoT Thing
+  IoTThing:
+    Type: AWS::IoT::Thing
+    DeletionPolicy: "Delete"
+    Properties:
+      ThingName: EnvironmentalSensor
+
+  # Create an IAM Role for EC2 with IoT access
+  Ec2IoTRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Ec2-IoT
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSIoTFullAccess
+      Tags:
+        - Key: Name
+          Value: Ec2-IoT
+
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: Ec2InstanceProfile
+      Roles:
+        - Ref: Ec2IoTRole
+
+  # Create an EC2 Instance 
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyName
+      ImageId: ami-0427090fd1714168b
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: '0'
+          SubnetId: !Ref Subnet
+          GroupSet:
+            - !Ref SecurityGroup
+      Tags:
+        - Key: Name
+          Value: IoT_Device_VM
+      # Execute following user data on EC2's shell
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+        
+          # Update the system and install Python and the IoT SDK
+          yum update -y
+          yum install python3 -y
+          yum install python3-pip -y
+          yum install aws-cli -y
+          sudo pip3 install AWSIoTPythonSDK
+
+          # Configure AWS Cli with empty credentials and specify the region
+          mkdir /home/ec2-user/.aws
+          echo -e "[default]\nregion = us-east-1" >> /home/ec2-user/.aws/config
+          
+          # Create and download IoT Device Certificates
+          mkdir -p /home/ec2-user/certs
+          aws iot create-keys-and-certificate --set-as-active --certificate-pem-outfile /home/ec2-user/certs/EnvironmentalSensor.pem.crt --private-key-outfile /home/ec2-user/certs/EnvironmentalSensor.pem.key --public-key-outfile /home/ec2-user/certs/EnvironmentalSensor.pem.key
+          wget -O /home/ec2-user/certs/AmazonRootCA1.pem https://www.amazontrust.com/repository/AmazonRootCA1.pem
+
+          # Create a shell script (Preparingcmd.sh) that creates another shell script (IotCertificates.sh) with commands to link IoT Policy, Certificates, and IoT Thing
+          cat <<"EOF" > /home/ec2-user/Preparingcmd.sh
+          #! /bin/bash
+          certificateArn=$(aws iot list-certificates | grep "certificateArn" | sed 's/.*"://' | sed 's/,//g')
+          echo "aws iot attach-policy --target $certificateArn --policy-name IoTPolicy" > /home/ec2-user/IotCertificates.sh
+          echo "aws iot attach-thing-principal --principal  "$certificateArn" --thing-name EnvironmentalSensor" >> /home/ec2-user/IotCertificates.sh
+          echo "aws iot describe-endpoint --endpoint-type iot:Data-ATS | grep "ats.iot" | sed 's/^.*://g' > /home/ec2-user/iotTEndpoint" >> /home/ec2-user/IotCertificates.sh
+          EOF
+          
+          # Assign execute permission and execute both shell scripts
+          chmod +x /home/ec2-user/Preparingcmd.sh
+          sh /home/ec2-user/Preparingcmd.sh
+
+          chmod +x /home/ec2-user/IotCertificates.sh
+          sh /home/ec2-user/IotCertificates.sh
+
+          # Create a Python Script that simulates an IoT Sensor 
+          cat <<EOF > /home/ec2-user/EnvironmentalSensor1.py
+          import time
+          import json
+          from AWSIoTPythonSDK.MQTTLib import AWSIoTMQTTClient
+
+          ENDPOINT = $(cat /home/ec2-user/iotTEndpoint)
+          CLIENT_ID = "EnvironmentalSensor1"
+          TOPIC = "environmental/sensor"
+          ROOT_CA = "/home/ec2-user/certs/AmazonRootCA1.pem"
+          PRIVATE_KEY = "/home/ec2-user/certs/EnvironmentalSensor.pem.key"
+          CERTIFICATE = "/home/ec2-user/certs/EnvironmentalSensor.pem.crt"
+
+          client = AWSIoTMQTTClient(CLIENT_ID)
+          client.configureEndpoint(ENDPOINT, 8883)
+          client.configureCredentials(ROOT_CA, PRIVATE_KEY, CERTIFICATE)
+
+          client.configureAutoReconnectBackoffTime(1, 32, 20)
+          client.configureOfflinePublishQueueing(-1)
+          client.configureDrainingFrequency(2)
+          client.configureConnectDisconnectTimeout(10)
+          client.configureMQTTOperationTimeout(5)
+
+          client.connect()
+
+          def get_sensor_data():
+              return {
+                  "device_id": CLIENT_ID,
+                  "temperature": 25.0 + (5.0 * (0.5 - time.time() % 1)),
+                  "humidity": 60.0 + (10.0 * (0.5 - time.time() % 1)),
+                  "air_quality": 80.0 + (5.0 * (0.5 - time.time() % 1))
+              }
+
+          while True:
+              sensor_data = get_sensor_data()
+              message = json.dumps(sensor_data)
+              client.publish(TOPIC, message, 1)
+              print(f"Published: {message}")
+              time.sleep(60)
+          EOF
+
+          # Create a SystemD Service Unit for IoT Sensor Python Script
+          cat <<EOF > /etc/systemd/system/environmentalSensor1.service
+          [Unit]
+          Description=IoT Sensor EnvironmentalSensor1 sending data to IoT TOPIC
+          After=network.target
+
+          [Service]
+          Type=idle
+          ExecStart=/usr/bin/python3 /home/ec2-user/EnvironmentalSensor1.py
+          Restart=on-failure
+
+          [Install]
+          WantedBy=default.target
+          EOF
+
+          # Enable and Start the Service Unit.
+          systemctl daemon-reload
+          systemctl enable environmentalSensor1.service
+          systemctl start environmentalSensor1.service
+          
+Outputs:
+  IoTThingName:
+    Description: Name of the IoT Thing
+    Value: !Ref IoTThing
+
+  EC2InstanceId:
+    Description: Instance ID of the EC2 instance
+    Value: !Ref EC2Instance
+
+  EC2PublicDNS:
+    Description: Public DNS of the EC2 instance
+    Value: !GetAtt EC2Instance.PublicDnsName
+
+  # Note: While this stack is deleting, if it fails, then:
+  # IoT Core:
+  #   I. Security --> Certificates: Detach IoT Policy and IoT Thing
+  #   II. Security --> Policies: Delete Policy
+  #   III. Manage --> All Devices --> Things: Delete IoT Thing                
