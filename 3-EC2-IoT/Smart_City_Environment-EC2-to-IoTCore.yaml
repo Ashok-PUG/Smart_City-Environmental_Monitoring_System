@@ -177,21 +177,21 @@ Resources:
           aws iot create-keys-and-certificate --set-as-active --certificate-pem-outfile /home/ec2-user/certs/EnvironmentalSensor.pem.crt --private-key-outfile /home/ec2-user/certs/EnvironmentalSensor.pem.key --public-key-outfile /home/ec2-user/certs/EnvironmentalSensor.pem.key
           wget -O /home/ec2-user/certs/AmazonRootCA1.pem https://www.amazontrust.com/repository/AmazonRootCA1.pem
 
-          # Create a shell script (Preparingcmd.sh) that creates another shell script (IotCertificates.sh) with commands to link IoT Policy, Certificates, and IoT Thing
+          # Create a shell script (Preparingcmd.sh) that creates another shell script (IotCertAttach.sh) with commands to link IoT Policy, Certificates, and IoT Thing
           cat <<"EOF" > /home/ec2-user/Preparingcmd.sh
           #! /bin/bash
           certificateArn=$(aws iot list-certificates | grep "certificateArn" | sed 's/.*"://' | sed 's/,//g')
-          echo "aws iot attach-policy --target $certificateArn --policy-name IoTPolicy" > /home/ec2-user/IotCertificates.sh
-          echo "aws iot attach-thing-principal --principal  "$certificateArn" --thing-name EnvironmentalSensor" >> /home/ec2-user/IotCertificates.sh
-          echo "aws iot describe-endpoint --endpoint-type iot:Data-ATS | grep "ats.iot" | sed 's/^.*://g' > /home/ec2-user/iotTEndpoint" >> /home/ec2-user/IotCertificates.sh
+          echo "aws iot attach-policy --target $certificateArn --policy-name IoTPolicy" > /home/ec2-user/IotCertAttach.sh
+          echo "aws iot attach-thing-principal --principal  "$certificateArn" --thing-name EnvironmentalSensor" >> /home/ec2-user/IotCertAttach.sh
+          echo "aws iot describe-endpoint --endpoint-type iot:Data-ATS | grep "ats.iot" | sed 's/^.*://g' > /home/ec2-user/iotTEndpoint" >> /home/ec2-user/IotCertAttach.sh
           EOF
           
           # Assign execute permission and execute both shell scripts
           chmod +x /home/ec2-user/Preparingcmd.sh
           sh /home/ec2-user/Preparingcmd.sh
 
-          chmod +x /home/ec2-user/IotCertificates.sh
-          sh /home/ec2-user/IotCertificates.sh
+          chmod +x /home/ec2-user/IotCertAttach.sh
+          sh /home/ec2-user/IotCertAttach.sh
 
           # Create a Python Script that simulates an IoT Sensor 
           cat <<EOF > /home/ec2-user/EnvironmentalSensor1.py
