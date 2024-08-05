@@ -234,7 +234,7 @@ Resources:
               time.sleep(60)
           EOF
 
-          # Change the owner of the certificates and the Python script to ec2-user
+          # Change the owner of the IoT certificates and the Python script to ec2-user
           sudo chown -R ec2-user:ec2-user /home/ec2-user/certs
           sudo  chown ec2-user:ec2-user /home/ec2-user/EnvironmentalSensor1.py
 
