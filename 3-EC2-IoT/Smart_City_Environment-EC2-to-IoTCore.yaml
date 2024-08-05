@@ -234,6 +234,10 @@ Resources:
               time.sleep(60)
           EOF
 
+          # Change the owner of the certificates and the Python script to ec2-user
+          sudo chown -R ec2-user:ec2-user /home/ec2-user/certs
+          sudo  chown ec2-user:ec2-user /home/ec2-user/EnvironmentalSensor1.py
+
           # Create a SystemD Service Unit for IoT Sensor Python Script
           cat <<EOF > /etc/systemd/system/environmentalSensor1.service
           [Unit]
