@@ -257,6 +257,9 @@ Resources:
           systemctl daemon-reload
           systemctl enable environmentalSensor1.service
           systemctl start environmentalSensor1.service
+
+          # Reboot the instance
+          sudo systemctl reboot
           
 Outputs:
   IoTThingName:
