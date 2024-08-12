@@ -1,13 +1,3 @@
-###########################################################################
-#   CloudFormation Template: Smart City Environmental Monitoring System   #
-#            Unit 7 Assignment: Proposed IoT Service                      #
-#                         Ashok Kumar Pathakamuri                         #
-#                      SBIT, Purdue University Global                     #
-#         IT473: Bachelor's Capstone in Cloud Computing and Solutions     #
-#                           Professor Stephen Savage                      #
-#                                August 1, 2024                           #
-###########################################################################
-
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Smart City Environmental Monitoring System - Unit 3 Assignment
 
