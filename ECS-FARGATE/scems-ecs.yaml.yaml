@@ -182,7 +182,28 @@ Resources:
           "Statement": [
             {
               "Effect": "Allow",
-              "Action": "iot:*",
+              "Action": [
+                "iot:Connect",
+                "iot:Publish",
+                "iot:Subscribe",
+                "iot:Receive"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "iot:AttachPolicy",
+                "iot:AttachPrincipalPolicy",
+                "iot:DescribeEndpoint"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "iot:AssumeRoleWithCertificate"
+              ],
               "Resource": "*"
             }
           ]
@@ -210,8 +231,19 @@ Resources:
             Principal:
               Service: ec2.amazonaws.com
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSIoTFullAccess
+      Policies:
+        - PolicyName: Ec2IoTCustomPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iot:DescribeEndpoint
+                  - iot:CreateKeysAndCertificate
+                  - iot:AttachThingPrincipal
+                  - iot:ListCertificates
+                  - iot:AttachPolicy
+                Resource: "*"
       Tags:
         - Key: Name
           Value: Ec2-IoT
